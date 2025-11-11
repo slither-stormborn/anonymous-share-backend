@@ -69,23 +69,41 @@ async def upload(file: UploadFile = File(...)):
 
 @app.get("/files")
 def list_files():
-    # Fetch all non-deleted, non-expired files
     now_iso = datetime.now(timezone.utc).isoformat()
 
+    # 1️⃣ Fetch ALL files (not filtered), because we must clean expired ones
+    all_files = supabase.table("file_uploads") \
+        .select("*") \
+        .execute().data
+
+    # 2️⃣ CLEANUP: delete expired files from storage + DB
+    for f in all_files:
+        if f["expires_at"] < now_iso:
+            # Delete from Supabase Storage
+            try:
+                supabase.storage.from_(BUCKET).remove(f["file_path"])
+            except:
+                pass  # ignore if already deleted or missing
+
+            # Delete row from DB
+            supabase.table("file_uploads") \
+                .delete() \
+                .eq("id", f["id"]) \
+                .execute()
+
+    # 3️⃣ After cleanup, fetch only valid non-deleted files
     res = supabase.table("file_uploads") \
         .select("*") \
-        .filter("is_deleted", "eq", False) \
         .filter("expires_at", "gt", now_iso) \
         .execute()
 
     files = res.data
-
     final_list = []
 
+    # 4️⃣ Generate signed URLs for remaining files
     for f in files:
         file_path = f["file_path"]
 
-        # Generate signed URL per file
         signed = supabase.storage.from_(BUCKET).create_signed_url(
             file_path,
             expires_in=3600,
@@ -104,7 +122,6 @@ def list_files():
         })
 
     return final_list
-
 
 @app.delete("/cleanup")
 def cleanup_expired_files():
