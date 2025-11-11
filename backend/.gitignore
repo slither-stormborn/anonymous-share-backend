@@ -2,4 +2,6 @@ Varun_Anynomous_System.txt
 venv/
 anonymous_share_fastapi/.env
 anonymous_share_fastapi/backend/.env
+__pycache__/
 .env
+*.pyc
